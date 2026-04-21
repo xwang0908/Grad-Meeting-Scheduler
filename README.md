@@ -42,6 +42,7 @@ src/
   App.jsx
   main.jsx
   index.css
+```
 
-##Terminal
+## Terminal
 To run: npm run dev
