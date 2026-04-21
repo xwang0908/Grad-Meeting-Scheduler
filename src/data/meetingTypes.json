@@ -1,0 +1,14 @@
+[
+  {
+    "id": "weekly-sync",
+    "label": "Weekly Sync",
+    "durationMinutes": 60,
+    "requiredRoles": ["PM", "Engineer"]
+  },
+  {
+    "id": "design-review",
+    "label": "Design Review",
+    "durationMinutes": 90,
+    "requiredRoles": ["PM", "Designer", "Engineer"]
+  }
+]

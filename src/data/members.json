@@ -1,0 +1,46 @@
+[
+  {
+    "id": "m1",
+    "name": "Anna",
+    "role": "PM",
+    "priorityWeight": 1.2,
+    "workingHours": ["09:00", "18:00"],
+    "noMeetingWindows": [["12:00", "13:00"]],
+    "privacyLevel": "busy-free",
+    "hardConstraints": ["teaching"],
+    "flexibleConstraints": ["gym"]
+  },
+  {
+    "id": "m2",
+    "name": "Drew",
+    "role": "Engineer",
+    "priorityWeight": 1.0,
+    "workingHours": ["10:00", "19:00"],
+    "noMeetingWindows": [],
+    "privacyLevel": "busy-free",
+    "hardConstraints": ["lab"],
+    "flexibleConstraints": ["commute"]
+  },
+  {
+    "id": "m3",
+    "name": "Kevin",
+    "role": "Researcher",
+    "priorityWeight": 0.9,
+    "workingHours": ["10:00", "19:00"],
+    "noMeetingWindows": [],
+    "privacyLevel": "busy-free",
+    "hardConstraints": ["lab"],
+    "flexibleConstraints": ["commute"]
+  },
+  {
+    "id": "m4",
+    "name": "Lisa",
+    "role": "Designer",
+    "priorityWeight": 1.1,
+    "workingHours": ["09:00", "18:00"],
+    "noMeetingWindows": [["12:00", "13:00"]],
+    "privacyLevel": "busy-free",
+    "hardConstraints": ["lab"],
+    "flexibleConstraints": ["gym"]
+  }
+]
