@@ -131,7 +131,7 @@ export default function SchedulerPage() {
 
         return a.start.localeCompare(b.start)
       })
-      .slice(0, 5)
+      .slice(0, 3)
 
     return ranked.map((candidate, index) => {
       const recommended = index === 0
