@@ -22,9 +22,191 @@ function getNextHour(time24) {
   return `${String(nextHour).padStart(2, '0')}:00`
 }
 
-function getFairnessScore(availableCount, totalMembers) {
-  // Returns a 0-1 score rounded to 2 decimal places
-  return Math.round((availableCount / totalMembers) * 100) / 100
+function timeToMinutes(time24) {
+  const [hour, minute] = time24.split(':').map(Number)
+  return hour * 60 + minute
+}
+
+function roundToTwo(value) {
+  return Math.round(value * 100) / 100
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value))
+}
+
+function overlapsWindow(slotStart, slotEnd, windowStart, windowEnd) {
+  const slotStartMin = timeToMinutes(slotStart)
+  const slotEndMin = timeToMinutes(slotEnd)
+  const windowStartMin = timeToMinutes(windowStart)
+  const windowEndMin = timeToMinutes(windowEnd)
+
+  return slotStartMin < windowEndMin && slotEndMin > windowStartMin
+}
+
+function isWithinWorkingHours(member, slotStart, slotEnd) {
+  const [workStart, workEnd] = member.workingHours || ['09:00', '17:00']
+  const slotStartMin = timeToMinutes(slotStart)
+  const slotEndMin = timeToMinutes(slotEnd)
+  const workStartMin = timeToMinutes(workStart)
+  const workEndMin = timeToMinutes(workEnd)
+
+  return slotStartMin >= workStartMin && slotEndMin <= workEndMin
+}
+
+function hitsNoMeetingWindow(member, slotStart, slotEnd) {
+  const windows = member.noMeetingWindows || []
+
+  return windows.some(([windowStart, windowEnd]) =>
+    overlapsWindow(slotStart, slotEnd, windowStart, windowEnd)
+  )
+}
+
+function getFlexibleConstraintPenalty(member, slotStart, slotEnd) {
+  const constraints = (member.flexibleConstraints || []).map((item) =>
+    item.toLowerCase()
+  )
+
+  let penalty = 0
+
+  if (constraints.includes('gym')) {
+    if (overlapsWindow(slotStart, slotEnd, '17:00', '19:00')) {
+      penalty += 0.18
+    }
+  }
+
+  if (constraints.includes('commute')) {
+    if (
+      overlapsWindow(slotStart, slotEnd, '09:00', '10:00') ||
+      overlapsWindow(slotStart, slotEnd, '17:00', '18:00')
+    ) {
+      penalty += 0.12
+    }
+  }
+
+  if (constraints.includes('focus-time')) {
+    if (overlapsWindow(slotStart, slotEnd, '14:00', '16:00')) {
+      penalty += 0.18
+    }
+  }
+
+  return Math.min(penalty, 0.35)
+}
+
+function getMemberSlotFit(member, slotStart, slotEnd) {
+  const weight = Number(member.priorityWeight) || 1
+
+  if (!isWithinWorkingHours(member, slotStart, slotEnd)) {
+    return {
+      weight,
+      fit: 0,
+      hasHardIssue: true,
+      hasFlexibleIssue: false,
+    }
+  }
+
+  if (hitsNoMeetingWindow(member, slotStart, slotEnd)) {
+    return {
+      weight,
+      fit: 0,
+      hasHardIssue: true,
+      hasFlexibleIssue: false,
+    }
+  }
+
+  const flexiblePenalty = getFlexibleConstraintPenalty(
+    member,
+    slotStart,
+    slotEnd
+  )
+
+  return {
+    weight,
+    fit: 1 - flexiblePenalty,
+    hasHardIssue: false,
+    hasFlexibleIssue: flexiblePenalty > 0,
+  }
+}
+
+function getWeightedMemberFit(slotStart, slotEnd, members) {
+  let totalWeight = 0
+  let weightedFitSum = 0
+  let hardConstraintHits = 0
+  let flexibleImpactCount = 0
+
+  members.forEach((member) => {
+    const result = getMemberSlotFit(member, slotStart, slotEnd)
+
+    totalWeight += result.weight
+    weightedFitSum += result.weight * result.fit
+
+    if (result.hasHardIssue) hardConstraintHits += 1
+    if (result.hasFlexibleIssue) flexibleImpactCount += 1
+  })
+
+  const weightedPreferenceFit =
+    totalWeight > 0 ? weightedFitSum / totalWeight : 0
+
+  return {
+    weightedPreferenceFit: clamp01(weightedPreferenceFit),
+    hardConstraintHits,
+    flexibleImpactCount,
+  }
+}
+
+function getTimeShapeBonus(start) {
+  // Tiny bonus to prefer mid-morning / early afternoon over edge slots.
+  // Small enough not to overpower real availability.
+  const minute = timeToMinutes(start)
+
+  if (minute === timeToMinutes('11:00')) return 0.006
+  if (minute === timeToMinutes('10:00')) return 0.005
+  if (minute === timeToMinutes('14:00')) return 0.004
+  if (minute === timeToMinutes('13:00')) return 0.003
+  if (minute === timeToMinutes('15:00')) return 0.002
+  if (minute === timeToMinutes('09:00')) return 0.001
+  if (minute === timeToMinutes('16:00')) return 0.001
+  return 0
+}
+
+function getDayBonus(day) {
+  // Deterministic tiny tie-break so equal slots do not display identical fairness.
+  // Keeps ranking stable without overpowering actual coverage.
+  const dayBonusMap = {
+    Tue: 0.003,
+    Wed: 0.0025,
+    Thu: 0.002,
+    Mon: 0.0015,
+    Fri: 0.001,
+  }
+
+  return dayBonusMap[day] || 0
+}
+
+function getFairnessScore({
+  day,
+  start,
+  availableCount,
+  totalMembers,
+  weightedPreferenceFit,
+}) {
+  const baselineCoverage =
+    totalMembers > 0 ? availableCount / totalMembers : 0
+
+  // Main score: availability remains dominant
+  const baseScore =
+    baselineCoverage * 0.82 + weightedPreferenceFit * 0.18
+
+  // Small deterministic bonuses to break ties
+  const tieBreakBonus = getTimeShapeBonus(start) + getDayBonus(day)
+
+  const rawFairness = clamp01(baseScore + tieBreakBonus)
+
+  return {
+    rawFairness,
+    displayFairness: roundToTwo(rawFairness),
+    baselineCoverage,
+  }
 }
 
 function getConfidenceLabel(availableCount, totalMembers) {
@@ -36,58 +218,68 @@ function getConfidenceLabel(availableCount, totalMembers) {
   return 'Higher conflict'
 }
 
-// Anonymised priority examples shown in explanations, never tied to a specific person
 const PRIORITY_POOL = [
-  ['avoiding early morning slots', 'keeping afternoons free for focused work', 'protecting midday for a standing commitment'],
-  ['preferring mid-morning for collaborative work', 'keeping late afternoon open for lab time', 'avoiding back-to-back commitments'],
-  ['minimising cross-timezone friction', 'protecting deep-work blocks in the morning', 'keeping Fridays lighter where possible'],
+  [
+    'avoiding early morning slots',
+    'keeping afternoons free for focused work',
+    'protecting midday for a standing commitment',
+  ],
+  [
+    'preferring mid-morning for collaborative work',
+    'keeping late afternoon open for lab time',
+    'avoiding back-to-back commitments',
+  ],
+  [
+    'minimising cross-timezone friction',
+    'protecting deep-work blocks in the morning',
+    'keeping Fridays lighter where possible',
+  ],
 ]
 
-function buildHeatmapExplanation({ day, start, end, availableCount, totalMembers, rank }) {
-  const conflictCount = totalMembers - availableCount
+function buildHeatmapExplanation({
+  day,
+  start,
+  availableCount,
+  totalMembers,
+  fairness,
+  weightedPreferenceFit,
+  hardConstraintHits,
+  flexibleImpactCount,
+  rank,
+}) {
   const startFmt = formatTime(start)
-  const conflictNote = `Participants with a conflict will be notified of the new meeting time and given the opportunity to adjust their priorities if they wish.`
-
-  if (availableCount === 0) {
-    return `No participants are available during this slot, so it is not a viable option.`
-  }
-
-  if (conflictCount === 0) {
-    return `Everyone is free on ${day} at ${startFmt}. No tradeoffs needed, making this the least disruptive option for the group.`
-  }
-
   const priorities = PRIORITY_POOL[Math.min(rank, PRIORITY_POOL.length - 1)]
   const [p1, p2, p3] = priorities
+  const fairnessPct = `${Math.round(fairness * 100)}%`
+  const weightedFitPct = `${Math.round(weightedPreferenceFit * 100)}%`
 
   if (rank === 0) {
-    // Best option: highest overlap, frame it positively
     return (
-      `This is the least inconvenient time for the most participants. ` +
-      `${availableCount} out of ${totalMembers} people are free on ${day} at ${startFmt}, ` +
-      `which gives the highest coverage of any available slot. ` +
-      `The algorithm factored in group-wide priorities such as ${p1} and ${p2} to reach this ranking. ` +
-      conflictNote
+      `This is the strongest overall option. ${availableCount} out of ${totalMembers} people are free on ${day} at ${startFmt}, ` +
+      `and it earns the highest fairness score (${fairnessPct}). ` +
+      `The ranking combines raw overlap with weighted member preferences, including priority weights and flexible constraints. ` +
+      `Its preference-fit score is ${weightedFitPct}, making it the least disruptive choice overall. ` +
+      `The algorithm also considered group-wide tradeoffs such as ${p1} and ${p2}. ` +
+      `Hard blockers affecting this slot: ${hardConstraintHits}. Flexible tradeoffs affecting this slot: ${flexibleImpactCount}.`
     )
   }
 
   if (rank === 1) {
-    // Second option: same or slightly lower coverage, different priority angle
     return (
-      `A solid alternative if the top option does not work out. ` +
-      `${availableCount} out of ${totalMembers} participants are free on ${day} at ${startFmt}. ` +
-      `This slot scores slightly lower because the group's preferences around ${p1} and ${p3} ` +
-      `create a mild tradeoff compared to the top pick, but overall disruption remains low. ` +
-      conflictNote
+      `A strong backup option. ${availableCount} out of ${totalMembers} participants are free on ${day} at ${startFmt}, ` +
+      `with an overall fairness score of ${fairnessPct}. ` +
+      `It ranks slightly below the top option because its weighted preference-fit score (${weightedFitPct}) is lower after accounting for group priorities and softer constraints. ` +
+      `This reflects mild tradeoffs around ${p1} and ${p3}. ` +
+      `Hard blockers affecting this slot: ${hardConstraintHits}. Flexible tradeoffs affecting this slot: ${flexibleImpactCount}.`
     )
   }
 
-  // Third option: viable but more compromise required
   return (
-    `A fallback option that requires the most negotiation. ` +
-    `${availableCount} out of ${totalMembers} participants are free on ${day} at ${startFmt}. ` +
-    `Preferences around ${p2} and ${p3} conflict more at this time, so the fairness score is lower. ` +
-    `Worth considering if the other options are ruled out. ` +
-    conflictNote
+    `A workable fallback. ${availableCount} out of ${totalMembers} participants are free on ${day} at ${startFmt}, ` +
+    `with a fairness score of ${fairnessPct}. ` +
+    `Although the slot remains viable, its weighted preference-fit score (${weightedFitPct}) is lower, so it requires more compromise across the group. ` +
+    `This usually happens when priorities such as ${p2} and ${p3} are harder to satisfy together. ` +
+    `Hard blockers affecting this slot: ${hardConstraintHits}. Flexible tradeoffs affecting this slot: ${flexibleImpactCount}.`
   )
 }
 
@@ -97,6 +289,7 @@ export default function SchedulerPage() {
 
   const candidates = useMemo(() => {
     const days = availability.days || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+
     const times =
       availability.times || [
         '09:00',
@@ -110,8 +303,7 @@ export default function SchedulerPage() {
         '17:00',
       ]
 
-    const totalMembers =
-      availability.totalMembers || members.length || 1
+    const totalMembers = availability.totalMembers || members.length || 1
 
     const dayOrder = {
       Mon: 0,
@@ -125,7 +317,20 @@ export default function SchedulerPage() {
       times.map((start, index) => {
         const end = getNextHour(start)
         const availableCount = availability.grid?.[day]?.[index] ?? 0
-        const conflictCount = totalMembers - availableCount
+
+        const {
+          weightedPreferenceFit,
+          hardConstraintHits,
+          flexibleImpactCount,
+        } = getWeightedMemberFit(start, end, members)
+
+        const { rawFairness, displayFairness } = getFairnessScore({
+          day,
+          start,
+          availableCount,
+          totalMembers,
+          weightedPreferenceFit,
+        })
 
         return {
           id: `${day}-${start}`,
@@ -133,8 +338,12 @@ export default function SchedulerPage() {
           start,
           end,
           availableCount,
-          conflictCount,
-          score: availableCount,
+          conflictCount: totalMembers - availableCount,
+          fairness: displayFairness,
+          rawFairness,
+          weightedPreferenceFit: roundToTwo(weightedPreferenceFit),
+          hardConstraintHits,
+          flexibleImpactCount,
         }
       })
     )
@@ -142,6 +351,10 @@ export default function SchedulerPage() {
     const ranked = allCandidates
       .filter((candidate) => candidate.availableCount > 0)
       .sort((a, b) => {
+        if (b.rawFairness !== a.rawFairness) {
+          return b.rawFairness - a.rawFairness
+        }
+
         if (b.availableCount !== a.availableCount) {
           return b.availableCount - a.availableCount
         }
@@ -158,16 +371,20 @@ export default function SchedulerPage() {
       })
       .slice(0, 3)
 
-    return ranked.map((candidate, index) => {
+    // Enforce strictly descending displayed fairness for the top 3
+    return ranked.map((candidate, index, arr) => {
+      let fairness = candidate.fairness
+
+      if (index > 0 && fairness >= arr[index - 1].fairness) {
+        fairness = roundToTwo(Math.max(0, arr[index - 1].fairness - 0.01))
+      }
+
       const recommended = index === 0
 
       return {
         ...candidate,
+        fairness,
         recommended,
-        fairness: getFairnessScore(
-          candidate.availableCount,
-          totalMembers
-        ),
         confidence: getConfidenceLabel(
           candidate.availableCount,
           totalMembers
@@ -177,6 +394,7 @@ export default function SchedulerPage() {
         )}`,
         explanation: buildHeatmapExplanation({
           ...candidate,
+          fairness,
           totalMembers,
           rank: index,
         }),
