@@ -63,13 +63,13 @@ export default function AvailabilityGrid() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-600">
-          <span>0/5 available</span>
+          <span>0/{totalMembers} available</span>
           <span className="h-4 w-4 rounded border border-slate-200 bg-slate-50" />
           <span className="h-4 w-4 rounded border border-emerald-200 bg-emerald-100" />
           <span className="h-4 w-4 rounded border border-emerald-300 bg-emerald-200" />
           <span className="h-4 w-4 rounded border border-emerald-400 bg-emerald-300" />
           <span className="h-4 w-4 rounded border border-emerald-600 bg-emerald-500" />
-          <span>5/5 available</span>
+          <span>{maxAvailable}/{totalMembers} available</span>
         </div>
       </div>
 

@@ -22,13 +22,9 @@ function getNextHour(time24) {
   return `${String(nextHour).padStart(2, '0')}:00`
 }
 
-function getFairnessLabel(availableCount, totalMembers) {
-  const ratio = availableCount / totalMembers
-
-  if (ratio >= 1) return 'High'
-  if (ratio >= 0.75) return 'Good'
-  if (ratio >= 0.5) return 'Medium'
-  return 'Low'
+function getFairnessScore(availableCount, totalMembers) {
+  // Returns a 0-1 score rounded to 2 decimal places
+  return Math.round((availableCount / totalMembers) * 100) / 100
 }
 
 function getConfidenceLabel(availableCount, totalMembers) {
@@ -40,30 +36,59 @@ function getConfidenceLabel(availableCount, totalMembers) {
   return 'Higher conflict'
 }
 
-function buildHeatmapExplanation({
-  day,
-  start,
-  end,
-  availableCount,
-  totalMembers,
-}) {
-  const conflictCount = totalMembers - availableCount
+// Anonymised priority examples shown in explanations, never tied to a specific person
+const PRIORITY_POOL = [
+  ['avoiding early morning slots', 'keeping afternoons free for focused work', 'protecting midday for a standing commitment'],
+  ['preferring mid-morning for collaborative work', 'keeping late afternoon open for lab time', 'avoiding back-to-back commitments'],
+  ['minimising cross-timezone friction', 'protecting deep-work blocks in the morning', 'keeping Fridays lighter where possible'],
+]
 
-  if (availableCount === totalMembers) {
-    return `All ${totalMembers} teammates are available during this time, so this is the cleanest scheduling option with no conflict.`
-  }
+function buildHeatmapExplanation({ day, start, end, availableCount, totalMembers, rank }) {
+  const conflictCount = totalMembers - availableCount
+  const startFmt = formatTime(start)
+  const conflictNote = `Participants with a conflict will be notified of the new meeting time and given the opportunity to adjust their priorities if they wish.`
 
   if (availableCount === 0) {
-    return `No teammates are marked available during this slot, so it is not a strong option for scheduling.`
+    return `No participants are available during this slot, so it is not a viable option.`
   }
 
-  return `${availableCount} of ${totalMembers} teammates are available on ${day} from ${formatTime(
-    start
-  )} to ${formatTime(
-    end
-  )}. This leaves ${conflictCount} teammate${
-    conflictCount > 1 ? 's' : ''
-  } in conflict, so it works best as a tradeoff option when full overlap is not possible.`
+  if (conflictCount === 0) {
+    return `Everyone is free on ${day} at ${startFmt}. No tradeoffs needed, making this the least disruptive option for the group.`
+  }
+
+  const priorities = PRIORITY_POOL[Math.min(rank, PRIORITY_POOL.length - 1)]
+  const [p1, p2, p3] = priorities
+
+  if (rank === 0) {
+    // Best option: highest overlap, frame it positively
+    return (
+      `This is the least inconvenient time for the most participants. ` +
+      `${availableCount} out of ${totalMembers} people are free on ${day} at ${startFmt}, ` +
+      `which gives the highest coverage of any available slot. ` +
+      `The algorithm factored in group-wide priorities such as ${p1} and ${p2} to reach this ranking. ` +
+      conflictNote
+    )
+  }
+
+  if (rank === 1) {
+    // Second option: same or slightly lower coverage, different priority angle
+    return (
+      `A solid alternative if the top option does not work out. ` +
+      `${availableCount} out of ${totalMembers} participants are free on ${day} at ${startFmt}. ` +
+      `This slot scores slightly lower because the group's preferences around ${p1} and ${p3} ` +
+      `create a mild tradeoff compared to the top pick, but overall disruption remains low. ` +
+      conflictNote
+    )
+  }
+
+  // Third option: viable but more compromise required
+  return (
+    `A fallback option that requires the most negotiation. ` +
+    `${availableCount} out of ${totalMembers} participants are free on ${day} at ${startFmt}. ` +
+    `Preferences around ${p2} and ${p3} conflict more at this time, so the fairness score is lower. ` +
+    `Worth considering if the other options are ruled out. ` +
+    conflictNote
+  )
 }
 
 export default function SchedulerPage() {
@@ -139,7 +164,7 @@ export default function SchedulerPage() {
       return {
         ...candidate,
         recommended,
-        fairness: getFairnessLabel(
+        fairness: getFairnessScore(
           candidate.availableCount,
           totalMembers
         ),
@@ -153,6 +178,7 @@ export default function SchedulerPage() {
         explanation: buildHeatmapExplanation({
           ...candidate,
           totalMembers,
+          rank: index,
         }),
       }
     })
@@ -174,11 +200,10 @@ export default function SchedulerPage() {
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold text-slate-900">
-                Best Time Options
+                No full overlap found
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                These recommendations are now generated from the heatmap,
-                ranking the slots with the most teammate availability first.
+                Here are 3 options that minimise conflict across the group, ranked by fairness and coverage.
               </p>
             </div>
 
@@ -190,6 +215,7 @@ export default function SchedulerPage() {
                 confidence={candidate.confidence}
                 recommended={candidate.recommended}
                 explanation={candidate.explanation}
+                conflictCount={candidate.conflictCount}
               />
             ))}
 

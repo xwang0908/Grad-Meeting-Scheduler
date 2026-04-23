@@ -42,5 +42,16 @@
     "privacyLevel": "busy-free",
     "hardConstraints": ["lab"],
     "flexibleConstraints": ["gym"]
+  },
+  {
+    "id": "m5",
+    "name": "Sam",
+    "role": "Data Scientist",
+    "priorityWeight": 1.0,
+    "workingHours": ["09:00", "17:00"],
+    "noMeetingWindows": [["15:00", "16:00"]],
+    "privacyLevel": "busy-free",
+    "hardConstraints": ["seminar"],
+    "flexibleConstraints": ["focus-time"]
   }
 ]

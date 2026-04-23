@@ -1,47 +1,64 @@
 import { useState } from 'react'
 import ExplanationPanel from './ExplanationPanel'
 
-function getBadgeStyle(value, type) {
-  if (type === 'fairness') {
-    if (value === 'High') return 'bg-emerald-100 text-emerald-700'
-    if (value === 'Good') return 'bg-green-100 text-green-700'
-    if (value === 'Medium') return 'bg-amber-100 text-amber-700'
-    return 'bg-rose-100 text-rose-700'
-  }
+function getFairnessTextStyle(score) {
+  if (score >= 0.75) return 'text-sky-600'
+  if (score >= 0.5) return 'text-amber-500'
+  return 'text-rose-500'
+}
 
-  if (type === 'confidence') {
-    if (value === 'Full overlap') return 'bg-emerald-100 text-emerald-700'
-    if (value === 'Strong fit') return 'bg-green-100 text-green-700'
-    if (value === 'Partial overlap') return 'bg-amber-100 text-amber-700'
-    return 'bg-rose-100 text-rose-700'
-  }
+function getFitTextStyle(value) {
+  if (value === 'Full overlap') return 'text-sky-600'
+  if (value === 'Strong fit') return 'text-sky-500'
+  if (value === 'Partial overlap') return 'text-amber-500'
+  return 'text-rose-500'
+}
 
-  return 'bg-slate-100 text-slate-700'
+// Simple chevron SVG — flips when open
+function Chevron({ open }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  )
 }
 
 export default function CandidateCard({
   time = 'Tue 3:00 PM - 4:00 PM',
-  fairness = 'High',
-  confidence = 'Strong fit',
+  fairness = 0.6,
+  confidence = 'Partial overlap',
   recommended = false,
   explanation = '',
+  conflictCount = 0,
 }) {
   const [showExplanation, setShowExplanation] = useState(false)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
 
-  const fairnessStyle = getBadgeStyle(fairness, 'fairness')
-  const confidenceStyle = getBadgeStyle(confidence, 'confidence')
+  const fairnessTextStyle = getFairnessTextStyle(fairness)
+  const fitTextStyle = getFitTextStyle(confidence)
+  // Display as percentage-style: 0.60 -> "0.60"
+  const fairnessDisplay = fairness.toFixed(2)
 
   function handleConfirm() {
-    // Later, if you connect this to backend/API notification sending,
-    // trigger that here first, then show the modal after success.
     setShowSuccessModal(true)
   }
 
   return (
     <>
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {/* Top section: time + badges + confirm */}
+        <div className="flex flex-col gap-3 p-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-lg font-semibold text-slate-900">{time}</h3>
@@ -53,73 +70,86 @@ export default function CandidateCard({
               )}
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              <span
-                className={`rounded-full px-3 py-1 text-sm font-medium ${fairnessStyle}`}
-              >
-                Fairness: {fairness}
-              </span>
-
-              <span
-                className={`rounded-full px-3 py-1 text-sm font-medium ${confidenceStyle}`}
-              >
-                Fit: {confidence}
-              </span>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+              <span className="text-slate-400">Fairness:</span>
+              <span className={`font-semibold ${fairnessTextStyle}`}>{fairnessDisplay}</span>
+              <span className="text-slate-200">·</span>
+              <span className="text-slate-400">Fit:</span>
+              <span className={`font-medium ${fitTextStyle}`}>{confidence}</span>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setShowExplanation(!showExplanation)}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              {showExplanation ? 'Hide explanation' : 'Why this time?'}
-            </button>
-
+          <div className="flex-shrink-0">
             <button
               onClick={handleConfirm}
-              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
             >
               Confirm
             </button>
           </div>
         </div>
 
-        {showExplanation && <ExplanationPanel explanation={explanation} />}
+        {/* Accordion: Why this time? — sits at the bottom of the card */}
+        {showExplanation && (
+          <div className="border-t border-slate-100 bg-slate-50 px-5 py-4">
+            <ExplanationPanel explanation={explanation} />
+          </div>
+        )}
+
+        <button
+          onClick={() => setShowExplanation(!showExplanation)}
+          className="flex w-full items-center justify-between border-t border-slate-100 px-5 py-3 text-sm font-medium text-slate-500 transition hover:bg-slate-50"
+        >
+          <span>{showExplanation ? 'Hide explanation' : 'Why this time?'}</span>
+          <Chevron open={showExplanation} />
+        </button>
       </div>
 
       {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
-                <span className="text-xl text-emerald-600">✓</span>
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50">
+                <span className="text-xl text-blue-600">✓</span>
               </div>
 
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">
-                  Meeting confirmed
+                  Meeting scheduled
                 </h2>
                 <p className="text-sm text-slate-500">
-                  Your meeting details have been sent.
+                  All participants have been notified.
                 </p>
               </div>
             </div>
 
-            <div className="mt-5 rounded-xl bg-slate-50 p-4">
-              <p className="text-sm font-medium text-slate-700">Scheduled time</p>
-              <p className="mt-1 text-base font-semibold text-slate-900">{time}</p>
-              <p className="mt-2 text-sm text-slate-600">
-                Notifications have been sent to all group members for this selected meeting time.
-              </p>
+            <div className="mt-5 space-y-3">
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-sm font-medium text-slate-700">Scheduled time</p>
+                <p className="mt-1 text-base font-semibold text-slate-900">{time}</p>
+              </div>
+
+              <div className="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">
+                <p className="font-medium">📅 Calendar invites sent</p>
+                <p className="mt-1 text-blue-700">
+                  All participants have received a notification with the confirmed meeting time.
+                </p>
+              </div>
+
+              {conflictCount > 0 && (
+                <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
+                  <p className="font-medium">⚠️ Conflict notice sent</p>
+                  <p className="mt-1 text-amber-700">
+                    Participants with a conflict will be notified of the new meeting time and given the opportunity to adjust their priorities if they wish.
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className="mt-6 flex justify-end gap-2">
-
-
+            <div className="mt-6 flex justify-end">
               <button
                 onClick={() => setShowSuccessModal(false)}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
               >
                 Done
               </button>
